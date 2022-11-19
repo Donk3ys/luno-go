@@ -104,7 +104,7 @@ type Conn struct {
 // Dial initiates a connection to the streaming service and starts processing
 // data for the given market pair.
 // The connection will automatically reconnect on error.
-func Dial(keyID, keySecret, pair string, opts ...DialOption) (*Conn, error) {
+func Dial(keyID, keySecret, pair string, onUpdate func(), opts ...DialOption) (*Conn, error) {
 	if keyID == "" || keySecret == "" {
 		return nil, errors.New("streaming: streaming API requires credentials")
 	}
@@ -118,20 +118,20 @@ func Dial(keyID, keySecret, pair string, opts ...DialOption) (*Conn, error) {
 		opt(c)
 	}
 
-	go c.manageForever()
+	go c.manageForever(onUpdate)
 	return c, nil
 }
 
 var wsHost = flag.String(
 	"luno_websocket_host", "wss://ws.luno.com", "Luno API websocket host")
 
-func (c *Conn) manageForever() {
+func (c *Conn) manageForever(onUpdate func()) {
 	attempts := 0
 	var lastAttempt time.Time
 	for {
 		lastAttempt = time.Now()
 		attempts++
-		if err := c.connect(); err != nil {
+		if err := c.connect(onUpdate); err != nil {
 			log.Printf("luno/streaming: Connection error key=%s pair=%s: %v",
 				c.keyID, c.pair, err)
 		}
@@ -150,7 +150,7 @@ func (c *Conn) manageForever() {
 	}
 }
 
-func (c *Conn) connect() error {
+func (c *Conn) connect(onUpdate func()) error {
 	url := *wsHost + "/api/1/stream/" + c.pair
 	ws, _, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
@@ -218,6 +218,8 @@ func (c *Conn) connect() error {
 		if err := c.receivedUpdate(u); err != nil {
 			return fmt.Errorf("failed to process update: %w", err)
 		}
+
+		onUpdate()
 	}
 }
 
